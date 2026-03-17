@@ -1,0 +1,41 @@
+name: Build and Release Plugin
+
+on:
+  push:
+    tags:
+      - "v*" # triggers on version tags like v1.2.0.6
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build plugin
+        run: dotnet publish -c Release -o out
+
+      - name: Create zip
+        run: |
+          cd out
+          zip -r Jellyfin.Plugin.TelegramNotifier.zip .
+
+      - name: Generate SHA256
+        run: |
+          cd out
+          sha256sum Jellyfin.Plugin.TelegramNotifier.zip > checksum.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/Jellyfin.Plugin.TelegramNotifier.zip
+            out/checksum.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -9,7 +9,6 @@
 *.userosscache
 *.sln.docstates
 *.zip
-build_warnings.txt
 
 # OS generated files
 .DS_Store
