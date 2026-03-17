@@ -15,6 +15,10 @@ A feature-rich Jellyfin plugin that sends rich Telegram notifications for new me
 - **Recent Events Log**: Tracks past notifications for easy management and retriggering.
 
 ## 🚀 Installation
+### Automatic
+1. Add plugin repository 'https://raw.githubusercontent.com/Tomstar-2000/JellyfinTelegramNotifier/main/manifest.json'
+2. Install Telegram Notifier in plugins section.
+3. Restart Jellyfin.
 
 ### Manual
 1. Create a folder named `TelegramNotifier` in your Jellyfin `plugins` directory.
