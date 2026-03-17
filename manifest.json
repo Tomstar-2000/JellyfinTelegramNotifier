@@ -7,7 +7,7 @@
     "category":  "Notifications",
     "versions":  [
                      {
-                        "version":  "1.2.0.6",
+                        "version":  "1.2.0.7",
                         "changelog":  "Searchable image dropdown for retrigger with thumbnail preview support.",
                         "targetAbi":  "10.11.0.0",
                         "sourceUrl":  "http://localhost:8080/Jellyfin.Plugin.TelegramNotifier.zip",
