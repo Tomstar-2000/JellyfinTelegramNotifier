@@ -12,7 +12,7 @@
         "changelog": "Searchable image dropdown for retrigger with thumbnail preview support.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Tomstar-2000/JellyfinTelegramNotifier/releases/download/v1.2.0.8/Jellyfin.Plugin.TelegramNotifier.zip",
-        "checksum": "309d3abc656adb667b557e2fceb16ce24dacd764731a40f73d833a393e4592a8",
+        "checksum": "086800287e66b1ecaf14bbd55870feed",
         "timestamp": "2026-03-17T19:24:42Z"
       }
     ]
