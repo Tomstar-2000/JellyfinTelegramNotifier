@@ -3,11 +3,17 @@ name: Build and Release Plugin
 on:
   push:
     tags:
-      - "v*" # triggers on version tags like v1.2.0.6
+      - "v*"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -18,24 +24,42 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update manifest.json
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          SOURCE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/Jellyfin.Plugin.TelegramNotifier.zip"
+          
+          jq --arg ver "$VERSION" \
+             --arg ts "$TIMESTAMP" \
+             --arg url "$SOURCE_URL" \
+             '.versions[0].version = $ver | .versions[0].timestamp = $ts | .versions[0].sourceUrl = $url' \
+             manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+
       - name: Build plugin
-        run: dotnet publish -c Release -o out
+        run: dotnet publish Jellyfin.Plugin.TelegramNotifier.csproj -c Release -o out
 
       - name: Create zip
         run: |
           cd out
-          zip -r Jellyfin.Plugin.TelegramNotifier.zip .
+          zip -r ../Jellyfin.Plugin.TelegramNotifier.zip .
 
-      - name: Generate SHA256
+      - name: Generate SHA256 and update manifest
         run: |
-          cd out
-          sha256sum Jellyfin.Plugin.TelegramNotifier.zip > checksum.txt
+          CHECKSUM=$(sha256sum Jellyfin.Plugin.TelegramNotifier.zip | cut -d ' ' -f 1)
+          echo $CHECKSUM > checksum.txt
+          jq --arg ck "$CHECKSUM" '.versions[0].checksum = $ck' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            out/Jellyfin.Plugin.TelegramNotifier.zip
-            out/checksum.txt
+            Jellyfin.Plugin.TelegramNotifier.zip
+            checksum.txt
+            manifest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
