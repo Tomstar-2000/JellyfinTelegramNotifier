@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.2.0.6</Version>
+    <AssemblyVersion>1.2.0.6</AssemblyVersion>
+    <FileVersion>1.2.0.6</FileVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <RootNamespace>Jellyfin.Plugin.TelegramNotifier</RootNamespace>
+    <Authors>Tomstar2000</Authors>
+    <Company>Tomstar2000</Company>
+    <Description>Rich Telegram notifications for Jellyfin media additions with cover art, smart aggregation, and manual retrigger support.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Jellyfin SDK packages - ExcludeAssets=runtime is REQUIRED -->
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.6">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Jellyfin.Model" Version="10.11.6">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+
+    <!-- HTTP & JSON -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- Embed the config page as an EmbeddedResource -->
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
+
+</Project>

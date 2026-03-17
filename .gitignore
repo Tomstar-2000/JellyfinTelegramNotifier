@@ -1,0 +1,16 @@
+# .NET Gitignore
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Tt]mp/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.zip
+build_warnings.txt
+
+# OS generated files
+.DS_Store
+Thumbs.db

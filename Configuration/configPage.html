@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Telegram Notifier</title>
+    <style>
+        /* Mobile responsiveness */
+        @media (max-width: 600px) {
+            .pluginConfigurationPage {
+                padding: 0.5em !important;
+            }
+            .sectionTitle {
+                font-size: 1.2em;
+            }
+            th, td {
+                padding: 4px 6px !important;
+                font-size: 0.85em;
+            }
+            #eventsTable th:nth-child(2), #eventsTable td:nth-child(2),
+            #eventsTable th:nth-child(3), #eventsTable td:nth-child(3) {
+                display: none; /* Hide Date and Type on mobile to save space */
+            }
+            .emby-button {
+                padding: 0.4em 0.8em !important;
+                font-size: 0.85em !important;
+            }
+            .manualBuildControls {
+                flex-direction: column;
+            }
+            .manualBuildControls > div {
+                width: 100% !important;
+            }
+            #manualBuildImagePreviewContainer {
+                width: 100% !important;
+                height: 150px !important;
+                margin-top: 10px;
+            }
+        }
+        #eventsTableContainer {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .manualBuildModal .inputContainer {
+            margin-bottom: 1.2em;
+            position: relative;
+        }
+    </style>
+ </head>
+<body>
+<div id="TelegramNotifierConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+
+            <!-- ── Header ─────────────────────────────────────────────────── -->
+            <div class="sectionTitleContainer flex align-items-center">
+                <h2 class="sectionTitle">Telegram Notifier</h2>
+            </div>
+            <p style="margin-bottom:1.5em; opacity:.7;">
+                Sends Telegram <code>sendPhoto</code> messages when new movies, episodes or seasons are added to your Jellyfin library.
+            </p>
+
+            <!-- ── Settings Form ─────────────────────────────────────────── -->
+            <form id="TelegramNotifierConfigForm">
+
+                <!-- Telegram -->
+                <div class="sectionTitleContainer">
+                    <h3 class="sectionTitle">Telegram Settings</h3>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="telegramBotToken">Bot Token</label>
+                    <input type="text" id="telegramBotToken" name="TelegramBotToken" is="emby-input"
+                           placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ" />
+                    <div class="fieldDescription">Your Telegram bot token from @BotFather.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="telegramChatId">Chat ID</label>
+                    <input type="text" id="telegramChatId" name="TelegramChatId" is="emby-input"
+                           placeholder="-1001234567890" />
+                    <div class="fieldDescription">Target chat/channel ID. Use @username or numeric ID.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="serverUrl">Jellyfin Server URL</label>
+                    <input type="text" id="serverUrl" name="ServerUrl" is="emby-input"
+                           placeholder="https://jellyfin.example.com" />
+                    <div class="fieldDescription">The public-facing URL of your Jellyfin server. Required for images.</div>
+                </div>
+
+                <hr />
+
+                <!-- Templates -->
+                <div class="sectionTitleContainer">
+                    <h3 class="sectionTitle">Message Templates</h3>
+                </div>
+                <p style="opacity:.7; font-size:.85em;">
+                    Available tokens: <code>{Title}</code> <code>{Year}</code> <code>{Overview}</code>
+                    <code>{SeriesName}</code> <code>{SeasonNumber}</code> <code>{EpisodeNumber}</code>
+                    <code>{EpisodeTitle}</code> <code>{AddedDate}</code> <code>{Rating}</code> <code>{Genres}</code>
+                </p>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="movieTemplate">Movie Template</label>
+                    <textarea id="movieTemplate" name="MovieTemplate" is="emby-input" rows="3"
+                              style="width:100%;font-family:monospace;resize:vertical;"></textarea>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="movieTopicId">Movie Topic ID (optional)</label>
+                    <input type="text" id="movieTopicId" name="MovieTopicId" is="emby-input" placeholder="1234" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="seasonTemplate">Season Template</label>
+                    <textarea id="seasonTemplate" name="SeasonTemplate" is="emby-input" rows="3"
+                              style="width:100%;font-family:monospace;resize:vertical;"></textarea>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="seasonTopicId">Season Topic ID (optional)</label>
+                    <input type="text" id="seasonTopicId" name="SeasonTopicId" is="emby-input" placeholder="1235" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="episodeTemplate">Episode Template</label>
+                    <textarea id="episodeTemplate" name="EpisodeTemplate" is="emby-input" rows="3"
+                              style="width:100%;font-family:monospace;resize:vertical;"></textarea>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="episodeTopicId">Episode Topic ID (optional)</label>
+                    <input type="text" id="episodeTopicId" name="EpisodeTopicId" is="emby-input" placeholder="1236" />
+                </div>
+
+                <hr />
+
+                <!-- Season Logic -->
+                <div class="sectionTitleContainer">
+                    <h3 class="sectionTitle">Season Completion Logic</h3>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="seasonThreshold">
+                        Season Threshold % (0&ndash;100)
+                    </label>
+                    <input type="number" id="seasonThreshold" name="SeasonThresholdPercent"
+                           is="emby-input" min="1" max="100" step="1" />
+                    <div class="fieldDescription">
+                        Percentage of a season's total episodes that must be present before a
+                        season-level notification is sent. At 100% all episodes must be present.
+                        Below this threshold, individual episode notifications are sent instead.
+                    </div>
+                </div>
+
+                <hr />
+
+                <!-- TVDB -->
+                <div class="sectionTitleContainer">
+                    <h3 class="sectionTitle">TVDB Integration (Optional)</h3>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input type="checkbox" id="enableTvDb" name="EnableTvDb" is="emby-checkbox" />
+                        <span>Enable TVDB for authoritative episode counts</span>
+                    </label>
+                    <div class="fieldDescription">
+                        When enabled, TVDB is queried to get the true episode count for a season
+                        before deciding whether to send a season-level notification.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="tvdbApiKey">TVDB API Key</label>
+                    <input type="text" id="tvdbApiKey" name="TvDbApiKey" is="emby-input" />
+                    <div class="fieldDescription">Obtain from <a href="https://thetvdb.com/api-information" target="_blank">thetvdb.com/api-information</a>.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="tvdbPin">TVDB PIN (subscriber only)</label>
+                    <input type="text" id="tvdbPin" name="TvDbPin" is="emby-input" />
+                </div>
+
+                <hr />
+
+                <!-- Advanced -->
+                <div class="sectionTitleContainer">
+                    <h3 class="sectionTitle">Advanced</h3>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="maxRecentEvents">Max Recent Events</label>
+                    <input type="number" id="maxRecentEvents" name="MaxRecentEvents" is="emby-input" min="10" max="500" step="10" />
+                    <div class="fieldDescription">How many past notification records to keep in the Retrigger panel below.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="aggregationDelay">Aggregation Delay (Minutes)</label>
+                    <input type="number" id="aggregationDelay" name="AggregationDelayMinutes" is="emby-input" min="0" max="60" step="1" />
+                    <div class="fieldDescription">
+                        Wait this many minutes after a library addition before sending.
+                        If a Library Scan is running, notifications will wait until the scan completes.
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save Settings</span>
+                    </button>
+                </div>
+            </form>
+
+            <br />
+
+            <!-- ── Recent Events / Retrigger Panel ───────────────────────── -->
+            <div class="sectionTitleContainer">
+                <h2 class="sectionTitle">Recent Events</h2>
+            </div>
+            <p style="opacity:.7;">
+                Review past notifications. You can edit the caption and retrigger any entry,
+                or delete it so the item will be re-notified on the next library scan.
+            </p>
+            <div style="margin-bottom:1em; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <button is="emby-button" id="manualBuildBtn" class="emby-button raised button-accent" style="background:#00a4dc; color:white;" onclick="openManualBuildModal()">
+                    <span>Manual Build</span>
+                </button>
+                <button is="emby-button" id="bulkDeleteBtn" class="emby-button raised" style="display:none; color:#f44336;" onclick="deleteSelectedEvents()">Delete Selected</button>
+            </div>
+            <div id="eventsTableContainer">
+                <p id="eventsLoadingMsg">Loading events…</p>
+                <table id="eventsTable" style="display:none;width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr style="border-bottom:1px solid rgba(255,255,255,.2);">
+                            <th style="padding:6px 10px;"><input type="checkbox" id="selectAll" onclick="toggleAll(this)" /></th>
+                             <th style="text-align:left;padding:6px 10px;">Date</th>
+                             <th style="text-align:left;padding:6px 10px;">Type</th>
+                            <th style="text-align:left;padding:6px 10px;">Source</th>
+                             <th style="text-align:left;padding:6px 10px;">Title</th>
+                             <th style="text-align:left;padding:6px 10px;">Status</th>
+                             <th style="text-align:left;padding:6px 10px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="eventsTableBody"></tbody>
+                </table>
+                <p id="eventsEmptyMsg" style="display:none;opacity:.5;">No events yet.</p>
+            </div>
+
+            <!-- Retrigger modal -->
+            <div id="retriggerModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+                 background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">
+                <div style="background:#1c1c1c;border-radius:8px;padding:2em;max-width:600px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.6);">
+                    <h3 style="margin-top:0;">Retrigger Notification</h3>
+                    <input type="hidden" id="retriggerItemId" />
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="retriggerText">Caption Text</label>
+                        <textarea id="retriggerText" rows="5"
+                            style="width:100%;font-family:monospace;resize:vertical;background:#111;color:#fff;border:1px solid #444;border-radius:4px;padding:8px;"></textarea>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="retriggerPhotoSelect">Notification Image</label>
+                        <div style="display:flex; gap:1.5em; align-items: flex-start; margin-top: 0.5em;">
+                            <div style="flex-grow:1;">
+                                <input type="text" id="imageSearch" placeholder="Search images..." is="emby-input" 
+                                    style="width:100%; background:#111; color:#fff; border:1px solid #444; border-radius:4px; padding:8px; margin-bottom: 8px;" 
+                                    oninput="filterImageOptions(this.value)" />
+                                <select id="retriggerPhotoSelect" style="width:100%; background:#111; color:#fff; border:1px solid #444; border-radius:4px; padding:8px; height: 140px;" size="5"
+                                    onchange="updateImagePreview(this.value)">
+                                    <!-- Options will be populated here -->
+                                </select>
+                            </div>
+                            <div id="imagePreviewContainer" style="width:140px; height:200px; border:1px solid #444; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#000; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+                                <img id="retriggerPreview" style="max-width:100%; max-height:100%; object-fit: contain; display:none;" />
+                                <span id="retriggerPreviewPlaceholder" style="color:#666; font-size:0.8em; text-align:center; padding: 10px;">Loading images...</span>
+                            </div>
+                        </div>
+                        <input type="hidden" id="retriggerPhotoUrl" />
+                        <div class="fieldDescription">Select a primary image to use for this notification.</div>
+                    </div>
+                    <div style="display:flex;gap:1em;justify-content:flex-end;margin-top:1em;">
+                        <button is="emby-button" class="emby-button raised" onclick="closeRetriggerModal()">Cancel</button>
+                        <button is="emby-button" class="emby-button raised button-submit" onclick="submitRetrigger()">Send Now</button>
+                    </div>
+                    <p id="retriggerStatus" style="margin-top:.5em;"></p>
+                </div>
+            </div>
+
+            <!-- Manual Build modal -->
+            <div id="manualBuildModal" class="manualBuildModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+                 background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;overflow-y:auto;padding:20px;">
+                <div style="background:#1c1c1c;border-radius:8px;padding:2em;max-width:700px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.6);margin:auto;">
+                    <h3 style="margin-top:0;">Manual Notification Build</h3>
+                    
+                    <div class="manualBuildControls">
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="manualTypeSelect">Type</label>
+                            <select id="manualTypeSelect" is="emby-select" onchange="onManualTypeChange()">
+                                <option value="Movie">Movie</option>
+                                <option value="Season">Season</option>
+                                <option value="Episode">Episode</option>
+                            </select>
+                        </div>
+                        
+                        <div class="inputContainer" id="manualSeasonNumberContainer" style="display:none;">
+                            <label class="inputLabel" for="manualSeasonNumber">Season Number (Filter)</label>
+                            <input type="number" id="manualSeasonNumber" is="emby-input" min="1" placeholder="Optional season number..." oninput="debounceSearch(document.getElementById('manualSearch').value)" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="manualSearch">Search Item</label>
+                            <input type="text" id="manualSearch" is="emby-input" placeholder="Start typing to search..." oninput="debounceSearch(this.value)" />
+                            <div id="manualSearchResults" style="display:none; background:#111; border:1px solid #444; border-radius: 0 0 4px 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); max-height:200px; overflow-y:auto; position:absolute; z-index:10000; width:100%;"></div>
+                            <input type="hidden" id="manualItemId" />
+                            <input type="hidden" id="manualItemTitle" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="manualText">Caption Preview</label>
+                            <textarea id="manualText" rows="5"
+                                style="width:100%;font-family:monospace;resize:vertical;background:#111;color:#fff;border:1px solid #444;border-radius:4px;padding:8px;"></textarea>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="manualPhotoSelect">Notification Image</label>
+                            <div style="display:flex; gap:1.5em; align-items: flex-start; margin-top: 0.5em;">
+                                <div style="flex-grow:1;">
+                                    <select id="manualPhotoSelect" style="width:100%; background:#111; color:#fff; border:1px solid #444; border-radius:4px; padding:8px;" size="8"
+                                        onchange="updateManualImagePreview(this.value)">
+                                        <option value="">Select an item first...</option>
+                                    </select>
+                                </div>
+                                <div id="manualBuildImagePreviewContainer" style="width:200px; height:300px; border:1px solid #444; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#000; flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+                                    <img id="manualPreview" style="max-width:100%; max-height:100%; object-fit: contain; display:none;" />
+                                    <span id="manualPreviewPlaceholder" style="color:#666; font-size:0.8em; text-align:center; padding: 10px;">Select an item to see image</span>
+                                </div>
+                            </div>
+                            <input type="hidden" id="manualPhotoUrl" />
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:1em;justify-content:flex-end;margin-top:2em;">
+                        <button is="emby-button" class="emby-button raised" onclick="closeManualBuildModal()">Cancel</button>
+                        <button is="emby-button" id="manualSendBtn" class="emby-button raised button-submit" style="background:#00a4dc; color:white;" onclick="submitManualSend()" disabled>Send Now</button>
+                    </div>
+                    <p id="manualStatus" style="margin-top:.5em;"></p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+    /* ── Jellyfin plugin page lifecycle hooks ──────────────────────────── */
+    window.TelegramNotifierConfigPage = {
+        pluginUniqueId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+    };
+
+    document.querySelector('#TelegramNotifierConfigPage').addEventListener('viewshow', function () {
+        Dashboard.showLoadingMsg();
+        var page = this;
+        ApiClient.getPluginConfiguration(TelegramNotifierConfigPage.pluginUniqueId).then(function (cfg) {
+            document.getElementById('telegramBotToken').value      = cfg.TelegramBotToken   || '';
+            document.getElementById('telegramChatId').value       = cfg.TelegramChatId     || '';
+            document.getElementById('serverUrl').value            = cfg.ServerUrl          || '';
+            document.getElementById('movieTopicId').value         = cfg.MovieTopicId       || '';
+            document.getElementById('seasonTopicId').value        = cfg.SeasonTopicId      || '';
+            document.getElementById('episodeTopicId').value       = cfg.EpisodeTopicId     || '';
+            document.getElementById('movieTemplate').value        = cfg.MovieTemplate      || '';
+            document.getElementById('seasonTemplate').value       = cfg.SeasonTemplate     || '';
+            document.getElementById('episodeTemplate').value      = cfg.EpisodeTemplate    || '';
+            document.getElementById('seasonThreshold').value      = cfg.SeasonThresholdPercent != null ? cfg.SeasonThresholdPercent : 100;
+            document.getElementById('enableTvDb').checked         = !!cfg.EnableTvDb;
+            document.getElementById('tvdbApiKey').value           = cfg.TvDbApiKey         || '';
+            document.getElementById('tvdbPin').value              = cfg.TvDbPin            || '';
+            document.getElementById('maxRecentEvents').value      = cfg.MaxRecentEvents    || 50;
+            document.getElementById('aggregationDelay').value     = cfg.AggregationDelayMinutes != null ? cfg.AggregationDelayMinutes : 5;
+            Dashboard.hideLoadingMsg();
+        });
+        loadRecentEvents();
+    });
+
+    document.getElementById('TelegramNotifierConfigForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        Dashboard.showLoadingMsg();
+        ApiClient.getPluginConfiguration(TelegramNotifierConfigPage.pluginUniqueId).then(function (cfg) {
+            cfg.TelegramBotToken     = document.getElementById('telegramBotToken').value.trim();
+            cfg.TelegramChatId       = document.getElementById('telegramChatId').value.trim();
+            cfg.ServerUrl            = document.getElementById('serverUrl').value.trim();
+            cfg.MovieTopicId         = document.getElementById('movieTopicId').value.trim();
+            cfg.SeasonTopicId        = document.getElementById('seasonTopicId').value.trim();
+            cfg.EpisodeTopicId       = document.getElementById('episodeTopicId').value.trim();
+            cfg.MovieTemplate        = document.getElementById('movieTemplate').value;
+            cfg.SeasonTemplate       = document.getElementById('seasonTemplate').value;
+            cfg.EpisodeTemplate      = document.getElementById('episodeTemplate').value;
+            cfg.SeasonThresholdPercent = parseInt(document.getElementById('seasonThreshold').value, 10) || 100;
+            cfg.EnableTvDb           = document.getElementById('enableTvDb').checked;
+            cfg.TvDbApiKey           = document.getElementById('tvdbApiKey').value.trim();
+            cfg.TvDbPin              = document.getElementById('tvdbPin').value.trim();
+            cfg.MaxRecentEvents      = parseInt(document.getElementById('maxRecentEvents').value, 10) || 50;
+            cfg.AggregationDelayMinutes = parseInt(document.getElementById('aggregationDelay').value, 10) || 5;
+            ApiClient.updatePluginConfiguration(TelegramNotifierConfigPage.pluginUniqueId, cfg).then(function () {
+                Dashboard.processPluginConfigurationUpdateResult();
+            });
+        });
+    });
+
+    /* ── Recent Events ────────────────────────────────────────────────── */
+    function loadRecentEvents() {
+        document.getElementById('eventsLoadingMsg').style.display = '';
+        document.getElementById('eventsTable').style.display = 'none';
+        document.getElementById('eventsEmptyMsg').style.display = 'none';
+
+        ApiClient.getJSON(ApiClient.getUrl('Plugins/TelegramNotifier/events')).then(function (events) {
+            document.getElementById('eventsLoadingMsg').style.display = 'none';
+            if (!events || events.length === 0) {
+                document.getElementById('eventsEmptyMsg').style.display = '';
+                return;
+            }
+            var tbody = document.getElementById('eventsTableBody');
+            tbody.innerHTML = '';
+            events.forEach(function (ev) {
+                var sentAt = (ev.sentAt || ev.SentAt) ? new Date(ev.sentAt || ev.SentAt).toLocaleString() : '';
+                var wasSent = ev.wasSent !== undefined ? ev.wasSent : ev.WasSent;
+                 var lastError = ev.lastError || ev.LastError;
+                var isManual = ev.isManual !== undefined ? ev.isManual : ev.IsManual;
+                var source = isManual 
+                    ? '<span style="opacity:.7; font-size:.9em; background:rgba(0,164,220,.2); padding:2px 6px; border-radius:4px;">Manual</span>'
+                    : '<span style="opacity:.5; font-size:.9em;">Auto</span>';
+                var status = wasSent
+                    ? '<span style="color:#4caf50;">✓ Sent</span>'
+                    : '<span style="color:#f44336;">✗ Failed</span>';
+                var row = document.createElement('tr');
+                row.style.borderBottom = '1px solid rgba(255,255,255,.08)';
+                row.innerHTML =
+                    '<td style="padding:8px 10px;"><input type="checkbox" class="eventCheckbox" data-id="' + htmlEncode(ev.itemId || ev.ItemId) + '" onclick="updateBulkDeleteBtn()" /></td>' +
+                    '<td style="padding:8px 10px;opacity:.7;">' + sentAt + '</td>' +
+                    '<td style="padding:8px 10px;">' + htmlEncode(ev.type || ev.Type) + '</td>' +
+                    '<td style="padding:8px 10px;">' + source + '</td>' +
+                    '<td style="padding:8px 10px;">' + htmlEncode(ev.title || ev.Title) + '</td>' +
+                    '<td style="padding:8px 10px;">' + status + '</td>' +
+                   '<td style="padding:8px 10px;">' +
+                        '<button class="emby-button button-accent" style="margin-right:6px; background:#00a4dc; color:white;" onclick="openRetriggerModal(\'' + htmlEncode(ev.itemId || ev.ItemId) + '\', this)">Retrigger</button>' +
+                        '<button class="emby-button" style="color:#f44336;" onclick="deleteEvent(\'' + htmlEncode(ev.itemId || ev.ItemId) + '\', this)">Delete</button>' +
+                    '</td>';
+                tbody.appendChild(row);
+            });
+            document.getElementById('eventsTable').style.display = '';
+            document.getElementById('selectAll').checked = false;
+            updateBulkDeleteBtn();
+        }).catch(function (err) {
+            document.getElementById('eventsLoadingMsg').textContent = 'Failed to load events.';
+            console.error('TelegramNotifier events error', err);
+        });
+    }
+
+    var allImageOptions = [];
+
+    function openRetriggerModal(itemId, btn) {
+        document.getElementById('retriggerItemId').value = itemId;
+        document.getElementById('retriggerStatus').textContent = '';
+        var modal = document.getElementById('retriggerModal');
+        modal.style.display = 'flex';
+
+        // Reset UI
+        document.getElementById('imageSearch').value = '';
+        var select = document.getElementById('retriggerPhotoSelect');
+        select.innerHTML = '<option value="">Loading options...</option>';
+        document.getElementById('retriggerPreview').style.display = 'none';
+        document.getElementById('retriggerPreviewPlaceholder').style.display = 'block';
+        document.getElementById('retriggerPreviewPlaceholder').textContent = 'Loading images...';
+
+        // 1. Fetch event data for caption
+        ApiClient.getJSON(ApiClient.getUrl('Plugins/TelegramNotifier/events')).then(function (events) {
+            var ev = events.find(function (e) { return (e.itemId || e.ItemId) === itemId; });
+            document.getElementById('retriggerText').value = ev ? (ev.renderedText || ev.RenderedText || '') : '';
+            var currentUrl = ev ? (ev.imageUrl || ev.ImageUrl || '') : '';
+            document.getElementById('retriggerPhotoUrl').value = currentUrl;
+
+            // 2. Fetch image options
+            ApiClient.getJSON(ApiClient.getUrl('Plugins/TelegramNotifier/images/' + itemId)).then(function (options) {
+                allImageOptions = options || [];
+                renderImageOptions(allImageOptions, currentUrl);
+            }).catch(function(err) {
+                console.error('Error fetching images', err);
+                select.innerHTML = '<option value="">Failed to load images</option>';
+            });
+        });
+    }
+
+    function renderImageOptions(options, currentUrl) {
+        var select = document.getElementById('retriggerPhotoSelect');
+        select.innerHTML = '';
+        
+        options.forEach(function (opt) {
+            var option = document.createElement('option');
+            option.value = opt.ImageUrl || opt.imageUrl;
+            option.textContent = opt.Name || opt.name;
+            if (option.value === currentUrl) option.selected = true;
+            select.appendChild(option);
+        });
+
+        if (options.length === 0) {
+            select.innerHTML = '<option value="">No images found</option>';
+        }
+
+        updateImagePreview(currentUrl || (options.length > 0 ? (options[0].ImageUrl || options[0].imageUrl) : ''));
+    }
+
+    function filterImageOptions(query) {
+        var filtered = allImageOptions.filter(function(opt) {
+            var name = (opt.Name || opt.name || '').toLowerCase();
+            return name.includes(query.toLowerCase());
+        });
+        renderImageOptions(filtered, document.getElementById('retriggerPhotoUrl').value);
+    }
+
+    function updateImagePreview(url) {
+        var img = document.getElementById('retriggerPreview');
+        var placeholder = document.getElementById('retriggerPreviewPlaceholder');
+        document.getElementById('retriggerPhotoUrl').value = url;
+
+        if (url) {
+            img.src = url;
+            img.style.display = 'block';
+            placeholder.style.display = 'none';
+        } else {
+            img.style.display = 'none';
+            placeholder.style.display = 'block';
+            placeholder.textContent = 'No Image Selected';
+        }
+    }
+
+    function closeRetriggerModal() {
+        document.getElementById('retriggerModal').style.display = 'none';
+    }
+
+    function submitRetrigger() {
+        var itemId = document.getElementById('retriggerItemId').value;
+        var text = document.getElementById('retriggerText').value;
+        var photoUrl = document.getElementById('retriggerPhotoUrl').value;
+        document.getElementById('retriggerStatus').textContent = 'Sending…';
+ 
+        ApiClient.ajax({
+            url: ApiClient.getUrl('Plugins/TelegramNotifier/retrigger/' + encodeURIComponent(itemId)),
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ CustomText: text, PhotoUrl: photoUrl }),
+            dataType: 'json'
+        }).then(function (result) {
+            if (result && (result.success || result.Success)) {
+                document.getElementById('retriggerStatus').textContent = '✓ Sent successfully!';
+                document.getElementById('retriggerStatus').style.color = '#4caf50';
+            } else {
+                document.getElementById('retriggerStatus').textContent = '✗ Failed to send.';
+                document.getElementById('retriggerStatus').style.color = '#f44336';
+            }
+            loadRecentEvents();
+        }).catch(function (err) {
+            document.getElementById('retriggerStatus').textContent = '✗ Error: ' + err;
+            document.getElementById('retriggerStatus').style.color = '#f44336';
+        });
+    }
+
+    function deleteEvent(itemId, btn) {
+        if (!confirm('Delete this event record? The item will be re-notified on the next library scan.')) return;
+        ApiClient.ajax({
+            url: ApiClient.getUrl('Plugins/TelegramNotifier/events/' + encodeURIComponent(itemId)),
+            type: 'DELETE'
+        }).then(function () {
+            loadRecentEvents();
+        });
+    }
+
+    /* ── Bulk Operations ──────────────────────────────────────────────── */
+    function toggleAll(source) {
+        var checkboxes = document.querySelectorAll('.eventCheckbox');
+        for (var i = 0; i < checkboxes.length; i++) {
+            checkboxes[i].checked = source.checked;
+        }
+        updateBulkDeleteBtn();
+    }
+
+    function updateBulkDeleteBtn() {
+        var checkboxes = document.querySelectorAll('.eventCheckbox:checked');
+        var btn = document.getElementById('bulkDeleteBtn');
+        if (checkboxes.length > 0) {
+            btn.style.display = 'inline-block';
+            btn.textContent = 'Delete Selected (' + checkboxes.length + ')';
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+
+    function deleteSelectedEvents() {
+         var checkboxes = document.querySelectorAll('.eventCheckbox:checked');
+         var ids = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-id'); });
+         if (ids.length === 0) return;
+ 
+         if (!confirm('Delete ' + ids.length + ' event records? They will be re-notified on the next library scan.')) return;
+ 
+         ApiClient.ajax({
+             url: ApiClient.getUrl('Plugins/TelegramNotifier/events/bulk-delete'),
+             type: 'POST',
+             contentType: 'application/json',
+             data: JSON.stringify(ids)
+         }).then(function () {
+             loadRecentEvents();
+         });
+     }
+
+    /* ── Manual Build ────────────────────────────────────────────────── */
+    var searchTimeout = null;
+    function debounceSearch(val) {
+        if (searchTimeout) clearTimeout(searchTimeout);
+        if (val.length < 2) {
+            document.getElementById('manualSearchResults').style.display = 'none';
+            return;
+        }
+        searchTimeout = setTimeout(function() {
+            performSearch(val);
+        }, 300);
+    }
+
+    function performSearch(query) {
+        var type = document.getElementById('manualTypeSelect').value;
+        var seasonNumber = document.getElementById('manualSeasonNumber').value;
+        
+        var url = ApiClient.getUrl('Plugins/TelegramNotifier/search');
+        url += '?searchTerm=' + encodeURIComponent(query);
+        url += '&type=' + encodeURIComponent(type);
+        if (seasonNumber) url += '&seasonNumber=' + encodeURIComponent(seasonNumber);
+
+        ApiClient.getJSON(url).then(function(results) {
+            var container = document.getElementById('manualSearchResults');
+            container.innerHTML = '';
+            if (results && results.length > 0) {
+                results.forEach(function(item) {
+                    var div = document.createElement('div');
+                    div.style.padding = '8px';
+                    div.style.cursor = 'pointer';
+                    div.style.borderBottom = '1px solid #333';
+                    div.textContent = '[' + item.Type + '] ' + item.Name;
+                    div.onclick = function() { selectItem(item); };
+                    div.onmouseover = function() { this.style.background = '#333'; };
+                    div.onmouseout = function() { this.style.background = 'transparent'; };
+                    container.appendChild(div);
+                });
+                container.style.display = 'block';
+            } else {
+                container.innerHTML = '<div style="padding:8px; opacity:.5;">No results found</div>';
+                container.style.display = 'block';
+            }
+        });
+    }
+
+    function selectItem(item) {
+        document.getElementById('manualItemId').value = item.Id;
+        document.getElementById('manualItemTitle').value = item.Name;
+        document.getElementById('manualSearch').value = item.Name;
+        document.getElementById('manualSearchResults').style.display = 'none';
+        document.getElementById('manualSendBtn').disabled = false;
+
+        // Fetch preview
+        ApiClient.getJSON(ApiClient.getUrl('Plugins/TelegramNotifier/preview/' + item.Id)).then(function(preview) {
+            document.getElementById('manualText').value = preview.Caption || '';
+            document.getElementById('manualPhotoUrl').value = preview.ImageUrl || '';
+            
+            // Fetch image options for this item
+            ApiClient.getJSON(ApiClient.getUrl('Plugins/TelegramNotifier/images/' + item.Id)).then(function(options) {
+                var select = document.getElementById('manualPhotoSelect');
+                select.innerHTML = '';
+                options.forEach(function(opt) {
+                    var option = document.createElement('option');
+                    option.value = opt.ImageUrl || opt.imageUrl;
+                    option.textContent = opt.Name || opt.name;
+                    if (option.value === preview.ImageUrl) option.selected = true;
+                    select.appendChild(option);
+                });
+                updateManualImagePreview(preview.ImageUrl);
+            });
+        });
+    }
+
+    function onManualTypeChange() {
+        var type = document.getElementById('manualTypeSelect').value;
+        document.getElementById('manualSeasonNumberContainer').style.display = (type === 'Episode' || type === 'Season') ? 'block' : 'none';
+        
+        document.getElementById('manualItemId').value = '';
+        document.getElementById('manualSearch').value = '';
+        document.getElementById('manualSeasonNumber').value = '';
+        document.getElementById('manualSearchResults').style.display = 'none';
+        document.getElementById('manualText').value = '';
+        document.getElementById('manualSendBtn').disabled = true;
+        updateManualImagePreview('');
+    }
+
+    function updateManualImagePreview(url) {
+        var img = document.getElementById('manualPreview');
+        var placeholder = document.getElementById('manualPreviewPlaceholder');
+        document.getElementById('manualPhotoUrl').value = url;
+        if (url) {
+            img.src = url;
+            img.style.display = 'block';
+            placeholder.style.display = 'none';
+        } else {
+            img.style.display = 'none';
+            placeholder.style.display = 'block';
+        }
+    }
+
+    function openManualBuildModal() {
+        document.getElementById('manualBuildModal').style.display = 'flex';
+        document.getElementById('manualStatus').textContent = '';
+        onManualTypeChange();
+    }
+
+    function closeManualBuildModal() {
+        document.getElementById('manualBuildModal').style.display = 'none';
+    }
+
+    function submitManualSend() {
+        var btn = document.getElementById('manualSendBtn');
+        btn.disabled = true;
+        document.getElementById('manualStatus').textContent = 'Sending...';
+        
+        var data = {
+            ItemId: document.getElementById('manualItemId').value,
+            Title: document.getElementById('manualItemTitle').value,
+            Type: document.getElementById('manualTypeSelect').value,
+            Caption: document.getElementById('manualText').value,
+            PhotoUrl: document.getElementById('manualPhotoUrl').value
+        };
+
+        ApiClient.ajax({
+            url: ApiClient.getUrl('Plugins/TelegramNotifier/manual-send'),
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            dataType: 'json'
+        }).then(function(result) {
+            if (result && (result.success || result.Success)) {
+                document.getElementById('manualStatus').textContent = '✓ Sent successfully!';
+                document.getElementById('manualStatus').style.color = '#4caf50';
+                setTimeout(closeManualBuildModal, 1500);
+                loadRecentEvents();
+            } else {
+                document.getElementById('manualStatus').textContent = '✗ Failed to send.';
+                document.getElementById('manualStatus').style.color = '#f44336';
+                btn.disabled = false;
+            }
+        }).catch(function(err) {
+            document.getElementById('manualStatus').textContent = '✗ Error: ' + err;
+            document.getElementById('manualStatus').style.color = '#f44336';
+            btn.disabled = false;
+        });
+    }
+     function htmlEncode(str) {
+         return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+     }
+    </script>
+</div>
+</body>
+</html>

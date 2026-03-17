@@ -1,0 +1,18 @@
+{
+    "guid":  "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name":  "Telegram Notifier",
+    "overview":  "Sends Telegram sendPhoto notifications for newly added movies, episodes and seasons.",
+    "description":  "Monitors your Jellyfin library for new additions and sends rich Telegram messages with cover art, customisable templates, smart season aggregation, deduplication and a manual retrigger panel.",
+    "owner":  "Tomstar2000",
+    "category":  "Notifications",
+    "versions":  [
+                     {
+                        "version":  "1.2.0.6",
+                        "changelog":  "Searchable image dropdown for retrigger with thumbnail preview support.",
+                        "targetAbi":  "10.11.0.0",
+                        "sourceUrl":  "http://localhost:8080/Jellyfin.Plugin.TelegramNotifier.zip",
+                        "checksum":  "a8fc4f8acc9d813dc4a45439c0558361",
+                        "timestamp":  "2026-03-12T20:06:00Z"
+                     }
+                 ]
+}
