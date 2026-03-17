@@ -48,9 +48,9 @@ jobs:
           cd out
           zip -r ../Jellyfin.Plugin.TelegramNotifier.zip .
 
-      - name: Generate SHA256 and update manifest
+      - name: Generate MD5 and update manifest
         run: |
-          CHECKSUM=$(sha256sum Jellyfin.Plugin.TelegramNotifier.zip | cut -d ' ' -f 1)
+          CHECKSUM=$(md5sum Jellyfin.Plugin.TelegramNotifier.zip | cut -d ' ' -f 1)
           echo $CHECKSUM > checksum.txt
           jq --arg ck "$CHECKSUM" '.versions[0].checksum = $ck' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
 
