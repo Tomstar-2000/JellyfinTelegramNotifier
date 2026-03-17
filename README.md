@@ -16,8 +16,9 @@ A feature-rich Jellyfin plugin that sends rich Telegram notifications for new me
 
 ## 🚀 Installation
 
-1. Create a folder named `Jellyfin.Plugin.TelegramNotifier` in your Jellyfin `plugins` directory.
-2. Download the latest release `Jellyfin.Plugin.TelegramNotifier.dll` and `manifest.json`.
+### Manual
+1. Create a folder named `TelegramNotifier` in your Jellyfin `plugins` directory.
+2. Download the latest zip release and extract to new `TelegramNotifier`.
 3. Place them in the created folder.
 4. Restart Jellyfin.
 
