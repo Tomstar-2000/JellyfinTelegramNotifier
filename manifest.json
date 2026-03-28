@@ -8,6 +8,14 @@
     "category": "Notifications",
     "versions": [
       {
+        "version": "1.2.0.9",
+        "changelog": "Fixed season notification trigger on single episode addition by requiring authoritative TVDB data.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Tomstar-2000/JellyfinTelegramNotifier/releases/download/v1.2.0.9/Jellyfin.Plugin.TelegramNotifier.zip",
+        "checksum": "83f0991f472b48cb1972362876759640",
+        "timestamp": "2026-03-28T17:57:33Z"
+      },
+      {
         "version": "1.2.0.8",
         "changelog": "Searchable image dropdown for retrigger with thumbnail preview support.",
         "targetAbi": "10.11.0.0",
