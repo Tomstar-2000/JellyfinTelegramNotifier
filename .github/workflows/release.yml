@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -34,10 +36,26 @@ jobs:
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           SOURCE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/Jellyfin.Plugin.TelegramNotifier.zip"
           
+          # Get commits since last tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            CHANGELOG="Initial release v${VERSION}"
+          else
+            CHANGELOG=$(git log ${PREVIOUS_TAG}..HEAD --oneline | tr '\n' '; ' | sed 's/; $//')
+          fi
+
           jq --arg ver "$VERSION" \
              --arg ts "$TIMESTAMP" \
              --arg url "$SOURCE_URL" \
-             '.versions[0].version = $ver | .versions[0].timestamp = $ts | .versions[0].sourceUrl = $url' \
+             --arg cl "$CHANGELOG" \
+             '.[0].versions |= ([{
+               "version": $ver,
+               "changelog": $cl,
+               "targetAbi": (.[0].versions[0].targetAbi // "10.11.0.0"),
+               "sourceUrl": $url,
+               "checksum": "00000000000000000000000000000000",
+               "timestamp": $ts
+             }] + .)' \
              manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
 
       - name: Build plugin
@@ -52,7 +70,7 @@ jobs:
         run: |
           CHECKSUM=$(md5sum Jellyfin.Plugin.TelegramNotifier.zip | cut -d ' ' -f 1)
           echo $CHECKSUM > checksum.txt
-          jq --arg ck "$CHECKSUM" '.versions[0].checksum = $ck' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+          jq --arg ck "$CHECKSUM" '.[0].versions[0].checksum = $ck' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
