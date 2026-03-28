@@ -204,12 +204,16 @@ public class NotificationManager : IDisposable
         }
         group.LastUpdatedAt = DateTime.UtcNow;
 
-        // 3. Resolve total count if unknown
-        if (group.TotalEpisodeCount < 0)
+        // 3. Resolve total count if unknown or not yet authoritative (from TVDB)
+        if (group.TotalEpisodeCount < 0 || !group.IsAuthoritative)
         {
             var sampleEp = _libraryManager.GetItemById(Guid.Parse(batchEpisodeIds.First())) as Episode;
             if (sampleEp != null)
-                group.TotalEpisodeCount = await ResolveEpisodeCountAsync(sampleEp, seriesId.ToString(), seasonNumber).ConfigureAwait(false);
+            {
+                var (total, isAuth) = await ResolveEpisodeCountAsync(sampleEp, seriesId.ToString(), seasonNumber).ConfigureAwait(false);
+                group.TotalEpisodeCount = total;
+                group.IsAuthoritative = isAuth;
+            }
         }
 
         await _store.UpsertPendingGroupAsync(group).ConfigureAwait(false);
@@ -219,10 +223,11 @@ public class NotificationManager : IDisposable
         var buffered = group.EpisodeItemIds.Count;
         var total = group.TotalEpisodeCount;
 
-        _logger.LogInformation("{Series} S{Season}: {Buffered}/{Total} episodes buffered (threshold {Threshold}%)",
-            group.SeriesName, seasonNumber, buffered, total < 0 ? "?" : total, cfg.SeasonThresholdPercent);
+        _logger.LogInformation("{Series} S{Season}: {Buffered}/{Total} episodes buffered (Threshold {Threshold}%, Authoritative: {Auth})",
+            group.SeriesName, seasonNumber, buffered, total < 0 ? "?" : total, cfg.SeasonThresholdPercent, group.IsAuthoritative);
 
-        bool seasonComplete = total > 0 && (buffered * 100 / total) >= cfg.SeasonThresholdPercent;
+        // A season is complete ONLY if we have an authoritative count AND we reached the threshold.
+        bool seasonComplete = group.IsAuthoritative && total > 0 && (buffered * 100 / total) >= cfg.SeasonThresholdPercent;
 
         if (seasonComplete)
         {
@@ -300,7 +305,7 @@ public class NotificationManager : IDisposable
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private async Task<int> ResolveEpisodeCountAsync(Episode episode, string seriesId, int seasonNumber)
+    private async Task<(int Total, bool IsAuthoritative)> ResolveEpisodeCountAsync(Episode episode, string seriesId, int seasonNumber)
     {
         // Try TVDB first
         var tvdbId = episode.GetProviderId(MetadataProvider.Tvdb);
@@ -312,15 +317,16 @@ public class NotificationManager : IDisposable
             if (!string.IsNullOrEmpty(seriesTvdbId))
             {
                 var count = await _tvDb.GetSeasonEpisodeCountAsync(seriesTvdbId, seasonNumber).ConfigureAwait(false);
-                if (count.HasValue)
+                if (count.HasValue && count.Value > 0)
                 {
                     _logger.LogInformation("TVDB reports {Count} episodes for S{Season}", count.Value, seasonNumber);
-                    return count.Value;
+                    return (count.Value, true);
                 }
             }
         }
 
-        // Fallback: count episodes in Jellyfin's local database for this season
+        // Fallback: count episodes in Jellyfin's local database for this season.
+        // This is NOT authoritative as it only knows what's on disk right now.
         var localCount = _libraryManager.GetItemList(new InternalItemsQuery
         {
             ParentId = episode.ParentId,  // Season folder
@@ -328,8 +334,8 @@ public class NotificationManager : IDisposable
             Recursive = false,
         }).Count;
 
-        _logger.LogInformation("Jellyfin local count for S{Season}: {Count}", seasonNumber, localCount);
-        return localCount > 0 ? localCount : -1;
+        _logger.LogInformation("Jellyfin local count for S{Season}: {Count} (Non-authoritative)", seasonNumber, localCount);
+        return (localCount > 0 ? localCount : -1, false);
     }
 
     private string? GetSeasonItemId(Episode episode)

@@ -23,6 +23,11 @@ public class PendingEpisodeGroup
     /// Total episode count from TVDB (or Jellyfin). -1 = unknown.
     /// </summary>
     public int TotalEpisodeCount { get; set; } = -1;
+    
+    /// <summary>
+    /// True if the count was resolved from an authoritative source (TVDB).
+    /// </summary>
+    public bool IsAuthoritative { get; set; } = false;
 
     public DateTime FirstAddedAt { get; set; } = DateTime.UtcNow;
     public DateTime LastUpdatedAt { get; set; } = DateTime.UtcNow;

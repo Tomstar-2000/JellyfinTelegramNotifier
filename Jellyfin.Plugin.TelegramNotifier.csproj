@@ -4,9 +4,9 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.2.0.7</Version>
-    <AssemblyVersion>1.2.0.7</AssemblyVersion>
-    <FileVersion>1.2.0.7</FileVersion>
+    <Version>1.2.0.9</Version>
+    <AssemblyVersion>1.2.0.9</AssemblyVersion>
+    <FileVersion>1.2.0.9</FileVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);1591</NoWarn>
