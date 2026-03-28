@@ -210,9 +210,9 @@ public class NotificationManager : IDisposable
             var sampleEp = _libraryManager.GetItemById(Guid.Parse(batchEpisodeIds.First())) as Episode;
             if (sampleEp != null)
             {
-                var (total, isAuth) = await ResolveEpisodeCountAsync(sampleEp, seriesId.ToString(), seasonNumber).ConfigureAwait(false);
-                group.TotalEpisodeCount = total;
-                group.IsAuthoritative = isAuth;
+                var (resolvedTotal, resolvedIsAuth) = await ResolveEpisodeCountAsync(sampleEp, seriesId.ToString(), seasonNumber).ConfigureAwait(false);
+                group.TotalEpisodeCount = resolvedTotal;
+                group.IsAuthoritative = resolvedIsAuth;
             }
         }
 

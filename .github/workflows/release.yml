@@ -24,7 +24,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "9.0.x"
 
       - name: Get version from tag
         id: get_version
@@ -57,6 +57,13 @@ jobs:
                "timestamp": $ts
              }] + .)' \
              manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+             
+      - name: Update Project Version
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|g" Jellyfin.Plugin.TelegramNotifier.csproj
+          sed -i "s|<AssemblyVersion>.*</AssemblyVersion>|<AssemblyVersion>${VERSION}</AssemblyVersion>|g" Jellyfin.Plugin.TelegramNotifier.csproj
+          sed -i "s|<FileVersion>.*</FileVersion>|<FileVersion>${VERSION}</FileVersion>|g" Jellyfin.Plugin.TelegramNotifier.csproj
 
       - name: Build plugin
         run: dotnet publish Jellyfin.Plugin.TelegramNotifier.csproj -c Release -o out
