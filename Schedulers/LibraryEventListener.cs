@@ -1,6 +1,5 @@
 using Jellyfin.Plugin.TelegramNotifier.Services;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

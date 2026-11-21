@@ -1,7 +1,5 @@
 using MediaBrowser.Controller.Entities;
-using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
-using MediaBrowser.Model.Entities;
 
 namespace Jellyfin.Plugin.TelegramNotifier.Services;
 

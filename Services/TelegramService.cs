@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using System.Net.Http.Headers;
 
 namespace Jellyfin.Plugin.TelegramNotifier.Services;
 
@@ -19,10 +18,17 @@ public class TelegramService
 
     /// <summary>
     /// Sends a photo message with caption to Telegram.
-    /// If <paramref name="imageUrl"/> is provided it will be sent as a URL-based photo.
-    /// Otherwise sends a text-only message via sendMessage.
+    /// If <paramref name="imageBytes"/> is provided, it is uploaded directly.
+    /// Otherwise, if <paramref name="imageUrl"/> is provided, it will be downloaded and sent.
+    /// Otherwise falls back to text-only message via sendMessage.
     /// </summary>
-    public async Task<bool> SendPhotoAsync(string botToken, string chatId, string caption, string? imageUrl, string? topicId = null)
+    public async Task<bool> SendPhotoAsync(
+        string botToken,
+        string chatId,
+        string caption,
+        string? imageUrl,
+        string? topicId = null,
+        byte[]? imageBytes = null)
     {
         if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatId))
         {
@@ -34,43 +40,46 @@ public class TelegramService
         {
             var client = _httpClientFactory.CreateClient();
 
-            if (!string.IsNullOrWhiteSpace(imageUrl))
+            // 1. If direct bytes are not supplied, attempt download if imageUrl is provided
+            if ((imageBytes == null || imageBytes.Length == 0) && !string.IsNullOrWhiteSpace(imageUrl))
             {
-                _logger.LogInformation("Attempting to send photo via multipart upload: {Url}", imageUrl);
-                
-                var imageBytes = await DownloadImageAsync(imageUrl).ConfigureAwait(false);
-                if (imageBytes != null)
-                {
-                    using var multipart = new MultipartFormDataContent();
-                    multipart.Add(new StringContent(chatId), "chat_id");
-                    multipart.Add(new ByteArrayContent(imageBytes), "photo", "image.jpg");
-                    multipart.Add(new StringContent(caption), "caption");
-                    multipart.Add(new StringContent("Markdown"), "parse_mode");
-
-                    if (!string.IsNullOrWhiteSpace(topicId))
-                    {
-                        multipart.Add(new StringContent(topicId), "message_thread_id");
-                    }
-
-                    var photoUrl = $"https://api.telegram.org/bot{botToken}/sendPhoto";
-                    var response = await client.PostAsync(photoUrl, multipart).ConfigureAwait(false);
-                    
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _logger.LogInformation("Telegram sendPhoto (multipart) succeeded");
-                        return true;
-                    }
-
-                    var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    _logger.LogWarning("Telegram sendPhoto (multipart) failed {Status}: {Body}", response.StatusCode, body);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to download image from {Url}, falling back to sendMessage", imageUrl);
-                }
+                _logger.LogInformation("Attempting to download photo for upload: {Url}", imageUrl);
+                imageBytes = await DownloadImageAsync(imageUrl).ConfigureAwait(false);
             }
 
-            // sendMessage fallback (no image or image failed)
+            // 2. Send via sendPhoto if we have image bytes
+            if (imageBytes != null && imageBytes.Length > 0)
+            {
+                _logger.LogInformation("Sending photo via multipart upload ({Length} bytes)", imageBytes.Length);
+                using var multipart = new MultipartFormDataContent();
+                multipart.Add(new StringContent(chatId), "chat_id");
+                multipart.Add(new ByteArrayContent(imageBytes), "photo", "image.jpg");
+                multipart.Add(new StringContent(caption), "caption");
+                multipart.Add(new StringContent("Markdown"), "parse_mode");
+
+                if (!string.IsNullOrWhiteSpace(topicId))
+                {
+                    multipart.Add(new StringContent(topicId), "message_thread_id");
+                }
+
+                var photoUrl = $"https://api.telegram.org/bot{botToken}/sendPhoto";
+                var response = await client.PostAsync(photoUrl, multipart).ConfigureAwait(false);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Telegram sendPhoto (multipart) succeeded");
+                    return true;
+                }
+
+                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                _logger.LogWarning("Telegram sendPhoto (multipart) failed {Status}: {Body}", response.StatusCode, body);
+            }
+            else if (!string.IsNullOrWhiteSpace(imageUrl))
+            {
+                _logger.LogWarning("No image bytes available for {Url}, falling back to sendMessage", imageUrl);
+            }
+
+            // 3. Fallback to sendMessage
             var msgUrl = $"https://api.telegram.org/bot{botToken}/sendMessage";
             var msgParameters = new List<KeyValuePair<string, string>>
             {
@@ -107,9 +116,17 @@ public class TelegramService
     {
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            // Handle custom TLS / loopback certificates gracefully
+            using var handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            };
+            using var client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(15)
+            };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-Telegram-Notifier/1.0");
-            
+
             var response = await client.GetAsync(url).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {

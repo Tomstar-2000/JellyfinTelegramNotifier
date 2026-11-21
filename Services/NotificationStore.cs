@@ -6,18 +6,16 @@ using Newtonsoft.Json;
 namespace Jellyfin.Plugin.TelegramNotifier.Services;
 
 /// <summary>
-/// Persists sent notification records and pending episode groups to JSON
+/// Persists sent notification records and pending items to JSON
 /// files in the Jellyfin data directory.
 /// </summary>
 public class NotificationStore
 {
     private readonly ILogger<NotificationStore> _logger;
     private readonly string _recordsPath;
-    private readonly string _pendingGroupsPath;
     private readonly string _pendingItemsPath;
 
     private List<NotificationRecord> _records = new();
-    private List<PendingEpisodeGroup> _pendingGroups = new();
     private List<PendingItem> _pendingItems = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
 
@@ -27,7 +25,9 @@ public class NotificationStore
         var dir = Path.Combine(appPaths.DataPath, "TelegramNotifier");
         Directory.CreateDirectory(dir);
         _recordsPath = Path.Combine(dir, "notifications.json");
-        _pendingGroupsPath = Path.Combine(dir, "pending_groups.json");
+        // Pending groups are no longer persisted; drop the stale file left by older versions.
+        try { File.Delete(Path.Combine(dir, "pending_groups.json")); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Could not delete stale pending_groups.json"); }
         _pendingItemsPath = Path.Combine(dir, "pending_items.json");
         Load();
     }
@@ -38,8 +38,6 @@ public class NotificationStore
         {
             if (File.Exists(_recordsPath))
                 _records = JsonConvert.DeserializeObject<List<NotificationRecord>>(File.ReadAllText(_recordsPath)) ?? new();
-            if (File.Exists(_pendingGroupsPath))
-                _pendingGroups = JsonConvert.DeserializeObject<List<PendingEpisodeGroup>>(File.ReadAllText(_pendingGroupsPath)) ?? new();
             if (File.Exists(_pendingItemsPath))
                 _pendingItems = JsonConvert.DeserializeObject<List<PendingItem>>(File.ReadAllText(_pendingItemsPath)) ?? new();
         }
@@ -54,7 +52,6 @@ public class NotificationStore
         try
         {
             File.WriteAllText(_recordsPath, JsonConvert.SerializeObject(_records, Formatting.Indented));
-            File.WriteAllText(_pendingGroupsPath, JsonConvert.SerializeObject(_pendingGroups, Formatting.Indented));
             File.WriteAllText(_pendingItemsPath, JsonConvert.SerializeObject(_pendingItems, Formatting.Indented));
             _logger.LogDebug("NotificationStore: Saved all files successfully");
         }
@@ -127,38 +124,6 @@ public class NotificationStore
         finally { _lock.Release(); }
     }
 
-    // ── Pending Episode Groups ────────────────────────────────────────────────
-
-    public async Task<PendingEpisodeGroup?> GetPendingGroupAsync(string seriesId, int seasonNumber)
-    {
-        await _lock.WaitAsync().ConfigureAwait(false);
-        try { return _pendingGroups.FirstOrDefault(p => p.SeriesId == seriesId && p.SeasonNumber == seasonNumber); }
-        finally { _lock.Release(); }
-    }
-
-    public async Task UpsertPendingGroupAsync(PendingEpisodeGroup group)
-    {
-        await _lock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            _pendingGroups.RemoveAll(p => p.SeriesId == group.SeriesId && p.SeasonNumber == group.SeasonNumber);
-            _pendingGroups.Add(group);
-            Save();
-        }
-        finally { _lock.Release(); }
-    }
-
-    public async Task RemovePendingGroupAsync(string seriesId, int seasonNumber)
-    {
-        await _lock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            _pendingGroups.RemoveAll(p => p.SeriesId == seriesId && p.SeasonNumber == seasonNumber);
-            Save();
-        }
-        finally { _lock.Release(); }
-    }
-
     // ── Pending Items (Delay/Scan sync) ────────────────────────────────────────
 
     public async Task AddPendingItemAsync(string itemId, string type)
@@ -168,7 +133,7 @@ public class NotificationStore
         {
             if (!_pendingItems.Any(i => i.ItemId == itemId))
             {
-                _pendingItems.Add(new PendingItem { ItemId = itemId, Type = type, AddedAt = DateTime.UtcNow });
+                _pendingItems.Add(new PendingItem { ItemId = itemId, Type = type });
                 Save();
             }
         }

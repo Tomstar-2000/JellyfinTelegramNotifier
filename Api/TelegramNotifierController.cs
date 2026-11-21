@@ -4,10 +4,7 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Model.Entities;
 using Jellyfin.Data.Enums;
-using MediaBrowser.Model.Drawing;
-using MediaBrowser.Model.Dto;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -75,7 +72,11 @@ public class TelegramNotifierController : ControllerBase
         _logger.LogInformation("Retriggering notification for {ItemId}", itemId);
         var success = await _manager.RetriggerAsync(record).ConfigureAwait(false);
 
-        return Ok(new RetriggerResult { Success = success, Record = record });
+        return Ok(new RetriggerResult
+        {
+            Success = success,
+            Record = record,
+        });
     }
 
     /// <summary>
@@ -104,9 +105,14 @@ public class TelegramNotifierController : ControllerBase
 
         var options = new List<ImageOption>();
 
-        // Add the item itself
-        options.Add(new ImageOption { Name = $"[Current] {item.Name ?? "Unknown"}", ImageUrl = GetItemImageUrl(item) ?? string.Empty });
+        // 1. Add current resolved image
+        var defaultUrl = _manager.GetItemImageUrl(item);
+        if (!string.IsNullOrEmpty(defaultUrl))
+        {
+            options.Add(new ImageOption { Name = $"[Default] {item.Name ?? "Current"}", ImageUrl = defaultUrl });
+        }
 
+        // 2. Add type-specific candidates
         if (item is Movie)
         {
             var movies = _libraryManager.GetItemList(new InternalItemsQuery
@@ -117,11 +123,20 @@ public class TelegramNotifierController : ControllerBase
             foreach (var m in movies.Cast<Movie>())
             {
                 if (m.Id == item.Id) continue;
-                options.Add(new ImageOption { Name = m.Name ?? "Unknown", ImageUrl = GetItemImageUrl(m) ?? string.Empty });
+                var url = _manager.GetItemImageUrl(m);
+                if (!string.IsNullOrEmpty(url))
+                    options.Add(new ImageOption { Name = m.Name ?? "Movie", ImageUrl = url });
             }
         }
         else if (item is Season season)
         {
+            if (season.Series != null)
+            {
+                var seriesUrl = _manager.GetItemImageUrl(season.Series);
+                if (!string.IsNullOrEmpty(seriesUrl))
+                    options.Add(new ImageOption { Name = $"[Series] {season.Series.Name}", ImageUrl = seriesUrl });
+            }
+
             var seasons = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 ParentId = season.SeriesId,
@@ -130,11 +145,27 @@ public class TelegramNotifierController : ControllerBase
             foreach (var s in seasons.Cast<Season>())
             {
                 if (s.Id == item.Id) continue;
-                options.Add(new ImageOption { Name = s.Name ?? "Unknown", ImageUrl = GetItemImageUrl(s) ?? string.Empty });
+                var url = _manager.GetItemImageUrl(s);
+                if (!string.IsNullOrEmpty(url))
+                    options.Add(new ImageOption { Name = s.Name ?? "Season", ImageUrl = url });
             }
         }
         else if (item is Episode episode)
         {
+            if (episode.Season != null)
+            {
+                var seasonUrl = _manager.GetItemImageUrl(episode.Season);
+                if (!string.IsNullOrEmpty(seasonUrl))
+                    options.Add(new ImageOption { Name = $"[Season] {episode.Season.Name ?? "Season"}", ImageUrl = seasonUrl });
+            }
+
+            if (episode.Series != null)
+            {
+                var seriesUrl = _manager.GetItemImageUrl(episode.Series);
+                if (!string.IsNullOrEmpty(seriesUrl))
+                    options.Add(new ImageOption { Name = $"[Series] {episode.Series.Name ?? "Series"}", ImageUrl = seriesUrl });
+            }
+
             var episodes = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 ParentId = episode.SeasonId,
@@ -143,18 +174,13 @@ public class TelegramNotifierController : ControllerBase
             foreach (var e in episodes.Cast<Episode>())
             {
                 if (e.Id == item.Id) continue;
-                options.Add(new ImageOption { Name = $"E{e.IndexNumber:D2} - {e.Name ?? "Unknown"}", ImageUrl = GetItemImageUrl(e) ?? string.Empty });
+                var url = _manager.GetItemImageUrl(e);
+                if (!string.IsNullOrEmpty(url))
+                    options.Add(new ImageOption { Name = $"E{e.IndexNumber:D2} - {e.Name ?? "Episode"}", ImageUrl = url });
             }
         }
 
-        return Ok(options.Where(o => !string.IsNullOrEmpty(o.ImageUrl)));
-    }
-
-    private string? GetItemImageUrl(BaseItem item)
-    {
-        var cfg = Plugin.Instance!.Configuration;
-        if (string.IsNullOrEmpty(cfg.ServerUrl)) return null;
-        return $"{cfg.ServerUrl.TrimEnd('/')}/Items/{item.Id:N}/Images/Primary";
+        return Ok(options);
     }
 
     /// <summary>
@@ -171,6 +197,7 @@ public class TelegramNotifierController : ControllerBase
         await _store.DeleteBulkAsync(itemIds).ConfigureAwait(false);
         return NoContent();
     }
+
     [HttpGet("search")]
     public IActionResult Search([FromQuery] string searchTerm, [FromQuery] string type, [FromQuery] int? seasonNumber = null)
     {
@@ -190,10 +217,10 @@ public class TelegramNotifierController : ControllerBase
             Limit = 20
         };
 
-        var items = _libraryManager.GetItemList(query);
+        var results = _libraryManager.GetItemList(query);
         var finalResults = new List<object>();
 
-        foreach (var item in items)
+        foreach (var item in results)
         {
             if (type == "Movie" && item is Movie movie)
             {
@@ -273,7 +300,7 @@ public class TelegramNotifierController : ControllerBase
         };
 
         var caption = TemplateEngine.Render(template, item);
-        var imageUrl = GetItemImageUrl(item);
+        var imageUrl = _manager.GetItemImageUrl(item);
 
         return Ok(new
         {

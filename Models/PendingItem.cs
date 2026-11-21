@@ -1,5 +1,3 @@
-using MediaBrowser.Controller.Entities;
-
 namespace Jellyfin.Plugin.TelegramNotifier.Models;
 
 /// <summary>
@@ -10,5 +8,4 @@ public class PendingItem
 {
     public string ItemId { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty; // Movie, Episode
-    public DateTime AddedAt { get; set; } = DateTime.UtcNow;
 }

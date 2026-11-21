@@ -1,11 +1,8 @@
 using Jellyfin.Plugin.TelegramNotifier.Configuration;
-using Jellyfin.Plugin.TelegramNotifier.Services;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Jellyfin.Plugin.TelegramNotifier;
 

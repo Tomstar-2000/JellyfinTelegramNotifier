@@ -4,10 +4,8 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.Querying;
 using Jellyfin.Data.Enums;
 using Microsoft.Extensions.Logging;
-using System.Threading;
 
 namespace Jellyfin.Plugin.TelegramNotifier.Services;
 
@@ -154,6 +152,7 @@ public class NotificationManager : IDisposable
         var cfg = Plugin.Instance!.Configuration;
         var caption = TemplateEngine.Render(cfg.MovieTemplate, movie);
         var imageUrl = GetItemImageUrl(movie);
+        var imageBytes = await GetItemImageBytesAsync(movie).ConfigureAwait(false);
 
         var record = new NotificationRecord
         {
@@ -165,7 +164,15 @@ public class NotificationManager : IDisposable
             TopicId = cfg.MovieTopicId,
         };
 
-        var sent = await _telegram.SendPhotoAsync(cfg.TelegramBotToken, cfg.TelegramChatId, caption, imageUrl, cfg.MovieTopicId).ConfigureAwait(false);
+        var sent = await _telegram.SendPhotoAsync(
+            cfg.TelegramBotToken,
+            cfg.TelegramChatId,
+            caption,
+            imageUrl,
+            cfg.MovieTopicId,
+            imageBytes)
+            .ConfigureAwait(false);
+
         record.WasSent = sent;
         if (!sent)
             record.LastError = "sendPhoto call returned false";
@@ -173,65 +180,29 @@ public class NotificationManager : IDisposable
         await _store.AddOrUpdateAsync(record).ConfigureAwait(false);
     }
 
-    // ── Episode / Season ──────────────────────────────────────────────────────
-
     // ── Episode / Season (Batch Aware) ────────────────────────────────────────
 
     private async Task ProcessEpisodeBatchAsync(Guid seriesId, int seasonNumber, List<string> batchEpisodeIds)
     {
-        // 1. Get or create the group
-        var group = await _store.GetPendingGroupAsync(seriesId.ToString(), seasonNumber).ConfigureAwait(false);
-        if (group == null)
-        {
-            var firstEp = _libraryManager.GetItemById(Guid.Parse(batchEpisodeIds.First())) as Episode;
-            if (firstEp == null) return;
+        var firstEp = _libraryManager.GetItemById(Guid.Parse(batchEpisodeIds.First())) as Episode;
+        if (firstEp == null) return;
 
-            group = new PendingEpisodeGroup
-            {
-                SeriesId = seriesId.ToString(),
-                SeriesName = firstEp.SeriesName ?? string.Empty,
-                SeasonNumber = seasonNumber,
-                SeasonItemId = GetSeasonItemId(firstEp) ?? string.Empty,
-                TotalEpisodeCount = -1,
-            };
-        }
+        var (total, isAuthoritative) = await ResolveEpisodeCountAsync(firstEp, seasonNumber).ConfigureAwait(false);
 
-        // 2. Add ALL batch items to the persistent group
-        foreach (var id in batchEpisodeIds)
-        {
-            if (!group.EpisodeItemIds.Contains(id))
-                group.EpisodeItemIds.Add(id);
-        }
-        group.LastUpdatedAt = DateTime.UtcNow;
-
-        // 3. Resolve total count if unknown or not yet authoritative (from TVDB)
-        if (group.TotalEpisodeCount < 0 || !group.IsAuthoritative)
-        {
-            var sampleEp = _libraryManager.GetItemById(Guid.Parse(batchEpisodeIds.First())) as Episode;
-            if (sampleEp != null)
-            {
-                var (resolvedTotal, resolvedIsAuth) = await ResolveEpisodeCountAsync(sampleEp, seriesId.ToString(), seasonNumber).ConfigureAwait(false);
-                group.TotalEpisodeCount = resolvedTotal;
-                group.IsAuthoritative = resolvedIsAuth;
-            }
-        }
-
-        await _store.UpsertPendingGroupAsync(group).ConfigureAwait(false);
-
-        // 4. Evaluate completeness
+        // Only episodes arriving together in this batch count toward completion; earlier
+        // episodes were already notified individually, so they must not trigger a season message.
         var cfg = Plugin.Instance!.Configuration;
-        var buffered = group.EpisodeItemIds.Count;
-        var total = group.TotalEpisodeCount;
+        var buffered = batchEpisodeIds.Distinct().Count();
 
-        _logger.LogInformation("{Series} S{Season}: {Buffered}/{Total} episodes buffered (Threshold {Threshold}%, Authoritative: {Auth})",
-            group.SeriesName, seasonNumber, buffered, total < 0 ? "?" : total, cfg.SeasonThresholdPercent, group.IsAuthoritative);
+        _logger.LogInformation("{Series} S{Season}: {Buffered}/{Total} episodes in batch (Threshold {Threshold}%, Authoritative: {Auth})",
+            firstEp.SeriesName, seasonNumber, buffered, total < 0 ? "?" : total, cfg.SeasonThresholdPercent, isAuthoritative);
 
         // A season is complete ONLY if we have an authoritative count AND we reached the threshold.
-        bool seasonComplete = group.IsAuthoritative && total > 0 && (buffered * 100 / total) >= cfg.SeasonThresholdPercent;
+        bool seasonComplete = isAuthoritative && total > 0 && (buffered * 100 / total) >= cfg.SeasonThresholdPercent;
 
         if (seasonComplete)
         {
-            await SendSeasonNotificationAsync(group).ConfigureAwait(false);
+            await SendSeasonNotificationAsync(seriesId, seasonNumber, firstEp).ConfigureAwait(false);
         }
         else
         {
@@ -246,37 +217,45 @@ public class NotificationManager : IDisposable
         }
     }
 
-    private async Task SendSeasonNotificationAsync(PendingEpisodeGroup group)
+    private async Task SendSeasonNotificationAsync(Guid seriesId, int seasonNumber, Episode sampleEpisode)
     {
         var cfg = Plugin.Instance!.Configuration;
+        var seriesName = sampleEpisode.SeriesName ?? string.Empty;
 
-        // Get the Season item from Jellyfin for the template
-        BaseItem? seasonItem = string.IsNullOrEmpty(group.SeasonItemId)
-            ? null
-            : _libraryManager.GetItemById(Guid.Parse(group.SeasonItemId));
+        // Get the Season item (episode's parent folder) from Jellyfin for the template
+        var seasonItemId = sampleEpisode.ParentId == Guid.Empty ? string.Empty : sampleEpisode.ParentId.ToString();
+        BaseItem? seasonItem = seasonItemId.Length == 0 ? null : _libraryManager.GetItemById(sampleEpisode.ParentId);
 
         var caption = seasonItem is not null
             ? TemplateEngine.Render(cfg.SeasonTemplate, seasonItem)
-            : $"📺 *{EscapeMarkdown(group.SeriesName)}* – Season {group.SeasonNumber:D2} is now complete!";
+            : $"📺 *{EscapeMarkdown(seriesName)}* – Season {seasonNumber:D2} is now complete!";
 
         var imageUrl = seasonItem is not null ? GetItemImageUrl(seasonItem) : null;
+        var imageBytes = seasonItem is not null ? await GetItemImageBytesAsync(seasonItem).ConfigureAwait(false) : null;
 
         var record = new NotificationRecord
         {
-            ItemId = group.SeasonItemId.Length > 0 ? group.SeasonItemId : $"{group.SeriesId}_S{group.SeasonNumber}",
-            Title = $"{group.SeriesName} – Season {group.SeasonNumber}",
+            ItemId = seasonItemId.Length > 0 ? seasonItemId : $"{seriesId}_S{seasonNumber}",
+            Title = $"{seriesName} – Season {seasonNumber}",
             Type = "Season",
             RenderedText = caption,
             ImageUrl = imageUrl ?? string.Empty,
             TopicId = cfg.SeasonTopicId,
         };
 
-        var sent = await _telegram.SendPhotoAsync(cfg.TelegramBotToken, cfg.TelegramChatId, caption, imageUrl, cfg.SeasonTopicId).ConfigureAwait(false);
+        var sent = await _telegram.SendPhotoAsync(
+            cfg.TelegramBotToken,
+            cfg.TelegramChatId,
+            caption,
+            imageUrl,
+            cfg.SeasonTopicId,
+            imageBytes)
+            .ConfigureAwait(false);
+
         record.WasSent = sent;
         if (!sent) record.LastError = "sendPhoto call returned false";
 
         await _store.AddOrUpdateAsync(record).ConfigureAwait(false);
-        await _store.RemovePendingGroupAsync(group.SeriesId, group.SeasonNumber).ConfigureAwait(false);
     }
 
     private async Task SendEpisodeNotificationAsync(Episode episode)
@@ -285,6 +264,7 @@ public class NotificationManager : IDisposable
         var itemId = episode.Id.ToString();
         var caption = TemplateEngine.Render(cfg.EpisodeTemplate, episode);
         var imageUrl = GetItemImageUrl(episode);
+        var imageBytes = await GetItemImageBytesAsync(episode).ConfigureAwait(false);
 
         var record = new NotificationRecord
         {
@@ -296,7 +276,15 @@ public class NotificationManager : IDisposable
             TopicId = cfg.EpisodeTopicId,
         };
 
-        var sent = await _telegram.SendPhotoAsync(cfg.TelegramBotToken, cfg.TelegramChatId, caption, imageUrl, cfg.EpisodeTopicId).ConfigureAwait(false);
+        var sent = await _telegram.SendPhotoAsync(
+            cfg.TelegramBotToken,
+            cfg.TelegramChatId,
+            caption,
+            imageUrl,
+            cfg.EpisodeTopicId,
+            imageBytes)
+            .ConfigureAwait(false);
+
         record.WasSent = sent;
         if (!sent) record.LastError = "sendPhoto call returned false";
 
@@ -305,7 +293,7 @@ public class NotificationManager : IDisposable
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private async Task<(int Total, bool IsAuthoritative)> ResolveEpisodeCountAsync(Episode episode, string seriesId, int seasonNumber)
+    private async Task<(int Total, bool IsAuthoritative)> ResolveEpisodeCountAsync(Episode episode, int seasonNumber)
     {
         // Try TVDB first
         var tvdbId = episode.GetProviderId(MetadataProvider.Tvdb);
@@ -338,12 +326,47 @@ public class NotificationManager : IDisposable
         return (localCount > 0 ? localCount : -1, false);
     }
 
-    private string? GetSeasonItemId(Episode episode)
+    /// <summary>
+    /// Finds the best available image source item with hierarchical fallback:
+    /// Item Primary -> Season Primary -> Series Primary
+    /// </summary>
+    public BaseItem ResolveImageSourceItem(BaseItem item)
     {
-        return episode.ParentId == Guid.Empty ? null : episode.ParentId.ToString();
+        if (item.HasImage(ImageType.Primary, 0))
+        {
+            return item;
+        }
+
+        if (item is Episode episode)
+        {
+            var season = episode.Season;
+            if (season != null && season.HasImage(ImageType.Primary, 0))
+            {
+                return season;
+            }
+
+            var series = episode.Series;
+            if (series != null && series.HasImage(ImageType.Primary, 0))
+            {
+                return series;
+            }
+        }
+        else if (item is Season season)
+        {
+            var series = season.Series;
+            if (series != null && series.HasImage(ImageType.Primary, 0))
+            {
+                return series;
+            }
+        }
+
+        return item;
     }
 
-    private string? GetItemImageUrl(BaseItem item)
+    /// <summary>
+    /// Gets the public image URL, resolving to parent items if needed.
+    /// </summary>
+    public string? GetItemImageUrl(BaseItem item)
     {
         var cfg = Plugin.Instance!.Configuration;
         if (string.IsNullOrEmpty(cfg.ServerUrl))
@@ -352,10 +375,33 @@ public class NotificationManager : IDisposable
             return null;
         }
 
-        // Format: https://server/Items/id/Images/Primary
-        var url = $"{cfg.ServerUrl.TrimEnd('/')}/Items/{item.Id:N}/Images/Primary";
-        _logger.LogDebug("Generated image URL for {Title}: {Url}", item.Name, url);
+        var sourceItem = ResolveImageSourceItem(item);
+        var url = $"{cfg.ServerUrl.TrimEnd('/')}/Items/{sourceItem.Id:N}/Images/Primary";
+        _logger.LogDebug("Generated image URL for {Title} (source: {SourceTitle}): {Url}", item.Name, sourceItem.Name, url);
         return url;
+    }
+
+    /// <summary>
+    /// Attempts to read the primary image directly from the local filesystem.
+    /// </summary>
+    public async Task<byte[]?> GetItemImageBytesAsync(BaseItem item)
+    {
+        try
+        {
+            var sourceItem = ResolveImageSourceItem(item);
+            var imageInfo = sourceItem.GetImageInfo(ImageType.Primary, 0);
+            if (imageInfo != null && !string.IsNullOrEmpty(imageInfo.Path) && File.Exists(imageInfo.Path))
+            {
+                _logger.LogInformation("Reading local image file directly: {Path}", imageInfo.Path);
+                return await File.ReadAllBytesAsync(imageInfo.Path).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read local image file for {Title}", item.Name);
+        }
+
+        return null;
     }
 
     private static string EscapeMarkdown(string text)
@@ -377,12 +423,23 @@ public class NotificationManager : IDisposable
             _ => null
         };
 
+        byte[]? imageBytes = null;
+        if (!string.IsNullOrEmpty(record.ItemId) && Guid.TryParse(record.ItemId, out var parsedGuid))
+        {
+            var item = _libraryManager.GetItemById(parsedGuid);
+            if (item != null)
+            {
+                imageBytes = await GetItemImageBytesAsync(item).ConfigureAwait(false);
+            }
+        }
+
         var sent = await _telegram.SendPhotoAsync(
             cfg.TelegramBotToken,
             cfg.TelegramChatId,
             record.RenderedText,
             string.IsNullOrEmpty(record.ImageUrl) ? null : record.ImageUrl,
-            topicId)
+            topicId,
+            imageBytes)
             .ConfigureAwait(false);
 
         record.WasSent = sent;
